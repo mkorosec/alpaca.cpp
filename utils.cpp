@@ -58,6 +58,8 @@ bool gpt_params_parse(int argc, char ** argv, gpt_params & params) {
             params.interactive_start = true;
         } else if (arg == "--color") {
             params.use_color = true;
+        } else if (arg == "--quiet") {
+            params.quiet = true;
         } else if (arg == "-r" || arg == "--reverse-prompt") {
             params.antiprompt = argv[++i];
         } else if (arg == "-h" || arg == "--help") {

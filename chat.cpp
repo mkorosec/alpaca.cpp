@@ -87,9 +87,10 @@ struct llama_model {
 };
 
 // load the model's weights from a file
-bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab & vocab, int n_ctx) {
-    fprintf(stderr, "%s: loading model from '%s' - please wait ...\n", __func__, fname.c_str());
-
+bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab & vocab, int n_ctx, bool quiet) {
+    if (!quiet) {
+        fprintf(stderr, "%s: loading model from '%s' - please wait ...\n", __func__, fname.c_str());
+    }
     std::vector<char> f_buf(1024*1024);
 
     auto fin = std::ifstream(fname, std::ios::binary);
@@ -222,8 +223,9 @@ bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab 
         ctx_size += n_ctx*n_layer*n_embd*ggml_type_sizef(GGML_TYPE_F32); // memory_v
 
         ctx_size += (5 + 10*n_layer)*256; // object overhead
-
-        fprintf(stderr, "%s: ggml ctx size = %6.2f MB\n", __func__, ctx_size/(1024.0*1024.0));
+        if (!quiet) {
+            fprintf(stderr, "%s: ggml ctx size = %6.2f MB\n", __func__, ctx_size/(1024.0*1024.0));
+        }
     }
 
     // create the ggml context
@@ -310,7 +312,9 @@ bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab 
 
         const size_t memory_size = ggml_nbytes(model.memory_k) + ggml_nbytes(model.memory_v);
 
-        fprintf(stderr, "%s: memory_size = %8.2f MB, n_mem = %d\n", __func__, memory_size/1024.0/1024.0, n_mem);
+        if (!quiet) {
+            fprintf(stderr, "%s: memory_size = %8.2f MB, n_mem = %d\n", __func__, memory_size/1024.0/1024.0, n_mem);
+        }
     }
 
     const size_t file_offset = fin.tellg();
@@ -328,8 +332,9 @@ bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab 
             fname_part += "." + std::to_string(i);
         }
 
-        fprintf(stderr, "%s: loading model part %d/%d from '%s'\n", __func__, i+1, n_parts, fname_part.c_str());
-
+        if (!quiet) {
+            fprintf(stderr, "%s: loading model part %d/%d from '%s'\n", __func__, i+1, n_parts, fname_part.c_str());
+        }
         fin = std::ifstream(fname_part, std::ios::binary);
         fin.rdbuf()->pubsetbuf(f_buf.data(), f_buf.size());
         fin.seekg(file_offset);
@@ -339,7 +344,9 @@ bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab 
             int n_tensors = 0;
             size_t total_size = 0;
 
-            fprintf(stderr, "%s: ", __func__);
+            if (!quiet) {
+                fprintf(stderr, "%s: ", __func__);
+            }
 
             while (true) {
                 int32_t n_dims;
@@ -504,14 +511,17 @@ bool llama_model_load(const std::string & fname, llama_model & model, gpt_vocab 
 
                 //fprintf(stderr, "%42s - [%5d, %5d], type = %6s, %6.2f MB\n", name.data(), ne[0], ne[1], ftype == 0 ? "float" : "f16", ggml_nbytes(tensor)/1024.0/1024.0);
                 if (++n_tensors % 8 == 0) {
-                    fprintf(stderr, ".");
+                    if (!quiet) {
+                        fprintf(stderr, ".");
+                    }
                     fflush(stderr);
                 }
             }
 
-            fprintf(stderr, " done\n");
-
-            fprintf(stderr, "%s: model size = %8.2f MB / num tensors = %d\n", __func__, total_size/1024.0/1024.0, n_tensors);
+            if (!quiet) {
+                fprintf(stderr, " done\n");
+                fprintf(stderr, "%s: model size = %8.2f MB / num tensors = %d\n", __func__, total_size/1024.0/1024.0, n_tensors);
+            }
         }
 
         fin.close();
@@ -813,7 +823,9 @@ int main(int argc, char ** argv) {
         params.seed = time(NULL);
     }
 
-    fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
+    if (!params.quiet) {
+        fprintf(stderr, "%s: seed = %d\n", __func__, params.seed);
+    }
 
     std::mt19937 rng(params.seed);
     // if (params.prompt.empty()) {
@@ -831,7 +843,7 @@ int main(int argc, char ** argv) {
     // load the model
     {
         const int64_t t_start_us = ggml_time_us();
-        if (!llama_model_load(params.model, model, vocab, params.n_ctx)) {  
+        if (!llama_model_load(params.model, model, vocab, params.n_ctx, params.quiet)) {  
             fprintf(stderr, "%s: failed to load model from '%s'\n", __func__, params.model.c_str());
             return 1;
         }
@@ -840,7 +852,7 @@ int main(int argc, char ** argv) {
     }
 
     // print system information
-    {
+    if (!params.quiet) {
         fprintf(stderr, "\n");
         fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
                 params.n_threads, std::thread::hardware_concurrency(), llama_print_system_info());
@@ -874,9 +886,7 @@ int main(int argc, char ** argv) {
     std::vector<gpt_vocab::id> instruct_inp = ::llama_tokenize(vocab, " Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n", true);
     std::vector<gpt_vocab::id> prompt_inp = ::llama_tokenize(vocab, "### Instruction:\n\n", true);
     std::vector<gpt_vocab::id> response_inp = ::llama_tokenize(vocab, "### Response:\n\n", false);
-
     embd_inp.insert(embd_inp.end(), instruct_inp.begin(), instruct_inp.end());
-
 
     if (params.interactive) {
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
@@ -906,8 +916,11 @@ int main(int argc, char ** argv) {
         //     fprintf(stderr, "\n");
         // }
     }
-    fprintf(stderr, "sampling parameters: temp = %f, top_k = %d, top_p = %f, repeat_last_n = %i, repeat_penalty = %f\n", params.temp, params.top_k, params.top_p, params.repeat_last_n, params.repeat_penalty);
-    fprintf(stderr, "\n\n");
+
+    if (!params.quiet) {
+        fprintf(stderr, "sampling parameters: temp = %f, top_k = %d, top_p = %f, repeat_last_n = %i, repeat_penalty = %f\n", params.temp, params.top_k, params.top_p, params.repeat_last_n, params.repeat_penalty);
+        fprintf(stderr, "\n\n");
+    }
 
     std::vector<gpt_vocab::id> embd;
 
