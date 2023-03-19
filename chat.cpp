@@ -1118,7 +1118,7 @@ int main(int argc, char ** argv) {
 #endif
 
     // report timing
-    {
+    if (!params.quiet) {
         const int64_t t_main_end_us = ggml_time_us();
 
         fprintf(stderr, "\n\n");
